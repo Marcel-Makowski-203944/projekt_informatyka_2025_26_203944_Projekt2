@@ -1,0 +1,2 @@
+# projekt_informatyka_2025_26_203944_Projekt2
+
