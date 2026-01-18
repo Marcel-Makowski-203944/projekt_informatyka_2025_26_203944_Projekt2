@@ -1,243 +1,219 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton
+from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QInputDialog
 from PyQt5.QtCore import Qt, QTimer, QPointF
 from PyQt5.QtGui import QPainter, QColor, QPen, QPainterPath
 
 class Rura:
-    def __init__(self, punkty, grubosc=12, kolor=Qt.gray):
+    def __init__(self, punkty, grubosc=10, kolor=Qt.yellow):
         self.punkty = [QPointF(float(p[0]), float(p[1])) for p in punkty]
         self.grubosc = grubosc
         self.kolor_rury = kolor
-        self.kolor_cieczy = QColor(0, 180, 255)
         self.czy_plynie = False
         
     def ustaw_przeplyw(self, plynie):
         self.czy_plynie = plynie
 
     def draw(self, painter):
-        if len(self.punkty) < 2:
-            return
+        if len(self.punkty) < 2: return
         path = QPainterPath()
         path.moveTo(self.punkty[0])
         for p in self.punkty[1:]:
             path.lineTo(p)
-
+        # Rura stale żółta - brak wizualizacji przepływu
         pen_rura = QPen(self.kolor_rury, self.grubosc, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         painter.setPen(pen_rura)
-        painter.setBrush(Qt.NoBrush)
         painter.drawPath(path)
 
-        if self.czy_plynie:
-            pen_ciecz = QPen(self.kolor_cieczy, self.grubosc - 4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
-            painter.setPen(pen_ciecz)
-            painter.drawPath(path)
-            
 class Zbiornik:
     def __init__(self, x, y, width=100, height=140, nazwa=""):
-        self.x = x; self.y = y
-        self.width = width; self.height = height
+        self.x, self.y = x, y
+        self.width, self.height = width, height
         self.nazwa = nazwa
-        self.pojemnosc = 100.0
+        # Z6 ma większą pojemność ze względu na rozmiar 200x200
+        self.pojemnosc = 400.0 if width == 200 else 100.0 
         self.aktualna_ilosc = 0.0
         self.poziom = 0.0
-        
-    def dodaj_ciecz(self, ilosc):
+        self.temperatura = 20.0
+
+    def dodaj_ciecz(self, ilosc, temp_wlotowa=None):
         wolne = self.pojemnosc - self.aktualna_ilosc
         dodano = min(ilosc, wolne)
+        if temp_wlotowa is not None and (self.aktualna_ilosc + dodano) > 0:
+            self.temperatura = ((self.aktualna_ilosc * self.temperatura) + (dodano * temp_wlotowa)) / (self.aktualna_ilosc + dodano)
+        elif self.aktualna_ilosc == 0 and temp_wlotowa is not None:
+            self.temperatura = temp_wlotowa
         self.aktualna_ilosc += dodano
-        self.aktualizuj_poziom()
+        self.poziom = self.aktualna_ilosc / self.pojemnosc
         return dodano
-        
+
     def usun_ciecz(self, ilosc):
         usunieto = min(ilosc, self.aktualna_ilosc)
         self.aktualna_ilosc -= usunieto
-        self.aktualizuj_poziom()
-        return usunieto
-        
-    def aktualizuj_poziom(self):
         self.poziom = self.aktualna_ilosc / self.pojemnosc
-        
-    def czy_pusty(self):
-        return self.aktualna_ilosc <= 0.1
-        
-    def czy_pelny(self):
-        return self.aktualna_ilosc >= self.pojemnosc - 0.1
+        return usunieto
 
-    def punkt_gora_srodek(self):
-        return (self.x + self.width / 2, self.y)
-
-    def punkt_dol_srodek(self):
-        return (self.x + self.width / 2, self.y + self.height)
+    def punkt_gora_srodek(self): return (self.x + self.width / 2, self.y)
+    def punkt_dol_srodek(self): return (self.x + self.width / 2, self.y + self.height)
+    def punkt_lewa_bok_45proc(self): return (self.x, self.y + self.height * (1 - 0.45))
+    def punkt_prawa_30proc(self): return (self.x + self.width, self.y + self.height * (1 - 0.3))
+    def punkt_lewa_srodek(self): return (self.x, self.y + self.height / 2)
 
     def draw(self, painter):
-        if self.poziom > 0:
-            h_cieczy = self.height * self.poziom
-            y_start = self.y + self.height - h_cieczy
+        if self.aktualna_ilosc > 0:
+            h_cieczy = int((self.height - 4) * self.poziom)
+            r = min(255, int(self.temperatura * 2))
+            g = max(0, 120 - int(self.temperatura))
+            b = max(50, 255 - int(self.temperatura))
+            painter.setBrush(QColor(r, g, b, 200))
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(0, 120, 255, 200))
-            painter.drawRect(int(self.x + 3), int(y_start), int(self.width - 6), int(h_cieczy - 2))
-        
-        pen = QPen(Qt.yellow, 4)
-        pen.setJoinStyle(Qt.MiterJoin)
-        painter.setPen(pen)
+            painter.drawRect(int(self.x + 2), int(self.y + self.height - h_cieczy - 2), int(self.width - 4), h_cieczy)
+
+        painter.setPen(QPen(Qt.green, 4))
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(int(self.x), int(self.y), int(self.width), int(self.height))
         
-        painter.setPen(Qt.green)
-        painter.drawText(int(self.x), int(self.y - 25), self.nazwa)
+        painter.setPen(Qt.darkGreen)
+        if any(char in self.nazwa for char in "3456"):
+            painter.drawText(int(self.x), int(self.y + self.height + 25), self.nazwa)
+        else:
+            painter.drawText(int(self.x), int(self.y - 15), self.nazwa)
         
+        painter.setPen(Qt.black)
+        text_temp = f"{self.temperatura:.1f}°C" if self.aktualna_ilosc > 0.1 else "-- °C"
+        painter.drawText(int(self.x + self.width + 10), int(self.y + self.height / 2), text_temp)
+
 class SymulacjaKaskady(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Przepływy cieczy")
-        self.setFixedSize(1500, 800)
-        self.setStyleSheet("background-color: white;")
-
-        # --- TWORZENIE ZBIORNIKÓW ---
-        self.z1 = Zbiornik(50, 50, nazwa="Zbiornik 1")
-        self.z1.aktualna_ilosc = 100.0; self.z1.aktualizuj_poziom()
-        self.z2 = Zbiornik(350, 200, nazwa="Zbiornik 2")
-        self.z3 = Zbiornik(650, 350, nazwa="Zbiornik 3")
-        self.z4 = Zbiornik(900, 500, nazwa="Zbiornik 4")
-        self.zbiorniki = [self.z1, self.z2, self.z3, self.z4]
-
-        # --- TWORZENIE RUR ---
-        # Rura 1 (Z1 -> Z2)
-        p_start = self.z1.punkt_dol_srodek()
-        p_koniec = self.z2.punkt_gora_srodek()
-        mid_y = (p_start[1] + p_koniec[1]) / 2
-        self.rura1 = Rura([p_start, (p_start[0], mid_y), (p_koniec[0], mid_y), p_koniec])
+        self.setWindowTitle("Symulator kaskady - Z6 Control")
+        self.setFixedSize(1200, 950)
         
-        # Rura 2 (Z2 -> Z3)
-        p_start2 = self.z2.punkt_dol_srodek()
-        p_koniec2 = self.z3.punkt_gora_srodek()
-        mid_y2 = (p_start2[1] + p_koniec2[1]) / 2
-        self.rura2 = Rura([p_start2, (p_start2[0], mid_y2), (p_koniec2[0], mid_y2), p_koniec2])
+        start_temp, ok = QInputDialog.getInt(self, "Parametry", "Temp. Z1 (°C):", 20, 0, 100, 1)
+        self.temp_startowa = float(start_temp) if ok else 20.0
 
-        # Rura 3 (Z3 -> Z4) - NOWOŚĆ
-        p_start3 = self.z3.punkt_dol_srodek()
-        p_koniec3 = self.z4.punkt_gora_srodek()
-        mid_y3 = (p_start3[1] + p_koniec3[1]) / 2
-        self.rura3 = Rura([p_start3, (p_start3[0], mid_y3), (p_koniec3[0], mid_y3), p_koniec3])
+        # Zbiorniki
+        self.z1 = Zbiornik(100, 50, nazwa="Zbiornik 1")
+        self.z1.aktualna_ilosc = 30.0; self.z1.poziom = 0.3; self.z1.temperatura = self.temp_startowa
+        
+        self.z2 = Zbiornik(450, 200, nazwa="Zbiornik 2")
+        self.z3 = Zbiornik(750, 500, nazwa="Zbiornik 3")
+        self.z4 = Zbiornik(100, 650, nazwa="Zbiornik 4")
+        self.z5 = Zbiornik(450, 700, nazwa="Zbiornik 5")
+        
+        # Zbiornik 6 (200x200)
+        self.z6 = Zbiornik(850, 80, width=200, height=200, nazwa="Zbiornik 6")
+        
+        self.zbiorniki = [self.z1, self.z2, self.z3, self.z4, self.z5, self.z6]
 
-        self.rury = [self.rura1, self.rura2, self.rura3]
+        # Definicje rur
+        p1s, p1k = self.z1.punkt_dol_srodek(), self.z2.punkt_gora_srodek()
+        self.rura1 = Rura([p1s, (p1s[0], 125), (p1k[0], 125), p1k])
+        
+        p2s, p2k = self.z2.punkt_dol_srodek(), self.z3.punkt_gora_srodek()
+        self.rura2 = Rura([p2s, (p2s[0], 480), (p2k[0], 480), p2k])
+        
+        p3s, p3k = self.z2.punkt_lewa_bok_45proc(), self.z4.punkt_gora_srodek()
+        self.rura3 = Rura([p3s, (300, p3s[1]), (150, 600), p3k])
 
-        # --- TIMERY I PRZYCISKI ---
+        self.rura_z2_do_z5 = Rura([self.z2.punkt_dol_srodek(), self.z5.punkt_gora_srodek()])
+
+        # Rura do Z6 (odchodzi na 30% wysokości Z2)
+        p2_30 = self.z2.punkt_prawa_30proc()
+        p6_in = self.z6.punkt_lewa_srodek()
+        self.rura_z2_do_z6 = Rura([p2_30, (p2_30[0] + 150, p2_30[1]), (p2_30[0] + 150, p6_in[1]), p6_in])
+
+        self.rury = [self.rura1, self.rura2, self.rura3, self.rura_z2_do_z5, self.rura_z2_do_z6]
+        
         self.timer = QTimer()
-        self.timer.timeout.connect(self.logika_przeplywu)
-        
-        self.btn = QPushButton("Start / Stop", self)
-        self.btn.setGeometry(50, 680, 100, 30)
-        self.btn.setStyleSheet("background-color: #000; color: white;")
-        self.btn.clicked.connect(self.przelacz_symulacje)
-    
-        # Przyciski Z1
-        self.btn = QPushButton("Z1 max", self)
-        self.btn.setGeometry(150, 680, 100, 30)
-        self.btn.setStyleSheet("background-color: #333; color: white;")
-        self.btn.clicked.connect(self.pelen_zbiornik1)
-        
-        self.btn = QPushButton("Z1 pusto", self)
-        self.btn.setGeometry(250, 680, 100, 30)
-        self.btn.setStyleSheet("background-color: #333; color: white;")
-        self.btn.clicked.connect(self.pusty_zbiornik1)
-        
-        # Przyciski Z2
-        self.btn = QPushButton("Z2 max", self)
-        self.btn.setGeometry(350, 680, 100, 30)
-        self.btn.setStyleSheet("background-color: #333; color: white;")
-        self.btn.clicked.connect(self.pelen_zbiornik2)
-        
-        self.btn = QPushButton("Z2 pusto", self)
-        self.btn.setGeometry(450, 680, 100, 30)
-        self.btn.setStyleSheet("background-color: #333; color: white;")
-        self.btn.clicked.connect(self.pusty_zbiornik2)
-        
-        # Przyciski Z3
-        self.btn = QPushButton("Z3 max", self)
-        self.btn.setGeometry(550, 680, 100, 30)
-        self.btn.setStyleSheet("background-color: #333; color: white;")
-        self.btn.clicked.connect(self.pelen_zbiornik3)
-        
-        self.btn = QPushButton("Z3 pusto", self)
-        self.btn.setGeometry(650, 680, 100, 30)
-        self.btn.setStyleSheet("background-color: #333; color: white;")
-        self.btn.clicked.connect(self.pusty_zbiornik3)
-
-        # Przyciski Z4 - NOWOŚĆ
-        self.btn = QPushButton("Z4 max", self)
-        self.btn.setGeometry(750, 680, 100, 30)
-        self.btn.setStyleSheet("background-color: #333; color: white;")
-        self.btn.clicked.connect(self.pelen_zbiornik4)
-        
-        self.btn = QPushButton("Z4 pusto", self)
-        self.btn.setGeometry(850, 680, 100, 30)
-        self.btn.setStyleSheet("background-color: #333; color: white;")
-        self.btn.clicked.connect(self.pusty_zbiornik4)
-        
+        self.timer.timeout.connect(self.logika)
         self.running = False
-        self.flow_speed = 2.137
+        self.init_ui()
 
-    def przelacz_symulacje(self):
+    def init_ui(self):
+        self.btn_start = QPushButton("Start / Stop", self)
+        self.btn_start.setGeometry(30, 880, 100, 40)
+        self.btn_start.clicked.connect(self.start_stop)
+
+        # Zaktualizowana lista przycisków
+        labels = [
+            ("Z1 Max", self.pelen_z1), ("Z1 Pusto", self.pusty_z1),
+            ("Z2 Max", self.pelen_z2), ("Z2 Pusto", self.pusty_z2),
+            ("Z3 Max", self.pelen_z3), ("Z3 Pusto", self.pusty_z3),
+            ("Z4 Max", self.pelen_z4), ("Z4 Pusto", self.pusty_z4),
+            ("Z5 Max", self.pelen_z5), ("Z5 Pusto", self.pusty_z5),
+            ("Z6 Max", self.pelen_z6), ("Z6 Pusto", self.pusty_z6)
+        ]
+        
+        x_pos = 150
+        for text, func in labels:
+            btn = QPushButton(text, self)
+            btn.setGeometry(x_pos, 885, 80, 30)
+            btn.setStyleSheet("background-color: #444; color: white; font-size: 10px;")
+            btn.clicked.connect(func)
+            x_pos += 85
+
+    # Metody sterowania zbiornikami
+    def pelen_z1(self): self.z1.dodaj_ciecz(100.0); self.z1.temperatura = self.temp_startowa; self.update()
+    def pusty_z1(self): self.z1.usun_ciecz(100.0); self.update()
+    def pelen_z2(self): self.z2.dodaj_ciecz(100.0); self.update()
+    def pusty_z2(self): self.z2.usun_ciecz(100.0); self.update()
+    def pelen_z3(self): self.z3.dodaj_ciecz(100.0); self.update()
+    def pusty_z3(self): self.z3.usun_ciecz(100.0); self.update()
+    def pelen_z4(self): self.z4.dodaj_ciecz(100.0); self.update()
+    def pusty_z4(self): self.z4.usun_ciecz(100.0); self.update()
+    def pelen_z5(self): self.z5.dodaj_ciecz(100.0); self.update()
+    def pusty_z5(self): self.z5.usun_ciecz(100.0); self.update()
+    def pelen_z6(self): self.z6.dodaj_ciecz(400.0); self.update()
+    def pusty_z6(self): self.z6.usun_ciecz(400.0); self.update()
+
+    def start_stop(self):
         if self.running: self.timer.stop()
         else: self.timer.start(30)
         self.running = not self.running
-        
-    def pelen_zbiornik1(self):
-        self.z1.aktualna_ilosc = 100.0; self.z1.aktualizuj_poziom(); self.update()
-    def pusty_zbiornik1(self):
-        self.z1.aktualna_ilosc = 0.0; self.z1.aktualizuj_poziom(); self.update()
-        
-    def pelen_zbiornik2(self):
-        self.z2.aktualna_ilosc = 100.0; self.z2.aktualizuj_poziom(); self.update()
-    def pusty_zbiornik2(self):
-        self.z2.aktualna_ilosc = 0.0; self.z2.aktualizuj_poziom(); self.update()
-    
-    def pelen_zbiornik3(self):
-        self.z3.aktualna_ilosc = 100.0; self.z3.aktualizuj_poziom(); self.update()
-    def pusty_zbiornik3(self):
-        self.z3.aktualna_ilosc = 0.0; self.z3.aktualizuj_poziom(); self.update()
 
-    def pelen_zbiornik4(self):
-        self.z4.aktualna_ilosc = 100.0; self.z4.aktualizuj_poziom(); self.update()
-    def pusty_zbiornik4(self):
-        self.z4.aktualna_ilosc = 0.0; self.z4.aktualizuj_poziom(); self.update()
+    def rysuj_pompe(self, painter, rura, index_punktu):
+        center = rura.punkty[index_punktu]
+        painter.setBrush(Qt.yellow)
+        painter.setPen(QPen(Qt.black, 2))
+        painter.drawEllipse(center, 18, 18)
 
-    def logika_przeplywu(self):
-        # Przepływ 1 -> 2
-        plynie_1 = False
-        if not self.z1.czy_pusty() and not self.z2.czy_pelny():
-            ilosc = self.z1.usun_ciecz(self.flow_speed)
-            self.z2.dodaj_ciecz(ilosc)
-            plynie_1 = True
-        self.rura1.ustaw_przeplyw(plynie_1)
+    def logika(self):
+        # Z1 -> Z2
+        if self.z1.poziom > 0.05 and self.z2.aktualna_ilosc < self.z2.pojemnosc:
+            self.z2.dodaj_ciecz(self.z1.usun_ciecz(0.6), self.z1.temperatura)
 
-        # Przepływ 2 -> 3 (tylko gdy w Z2 jest > 20)
-        plynie_2 = False
-        if self.z2.aktualna_ilosc > 15 and not self.z3.czy_pelny():
-            ilosc = self.z2.usun_ciecz(self.flow_speed)
-            self.z3.dodaj_ciecz(ilosc)
-            plynie_2 = True
-        self.rura2.ustaw_przeplyw(plynie_2)
+        # Grzanie Z2
+        if self.z2.aktualna_ilosc > 0 and self.z2.temperatura < self.temp_startowa + 25:
+            self.z2.temperatura += 0.05
 
-        # Przepływ 3 -> 4 (tylko gdy w Z3 jest > 20)
-        plynie_3 = False
-        if self.z3.aktualna_ilosc > 50 and not self.z4.czy_pelny():
-            ilosc = self.z3.usun_ciecz(self.flow_speed)
-            self.z4.dodaj_ciecz(ilosc)
-            plynie_3 = True
-        self.rura3.ustaw_przeplyw(plynie_3)
+        # Pompa Z2 -> Z6 (Wylot na 30% wysokości)
+        if self.z2.poziom > 0.3 and self.z6.aktualna_ilosc < self.z6.pojemnosc:
+            self.z6.dodaj_ciecz(self.z2.usun_ciecz(0.8), self.z2.temperatura)
 
+        # Grawitacyjny odpływ z dna Z2
+        if self.z2.poziom > 0.15:
+            if self.z3.aktualna_ilosc < self.z3.pojemnosc:
+                self.z3.dodaj_ciecz(self.z2.usun_ciecz(0.3), self.z2.temperatura)
+            if self.z5.aktualna_ilosc < self.z5.pojemnosc:
+                self.z5.dodaj_ciecz(self.z2.usun_ciecz(0.2), self.z2.temperatura)
+
+        # Wylot boczny Z2 -> Z4 (na 45% wysokości)
+        if self.z2.poziom > 0.45 and self.z4.aktualna_ilosc < self.z4.pojemnosc:
+            self.z4.dodaj_ciecz(self.z2.usun_ciecz(0.3), self.z2.temperatura)
+            
         self.update()
 
     def paintEvent(self, event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
+        p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
         for r in self.rury: r.draw(p)
+        
+        # Popy (identyczne dla Z1 i Z2->Z6)
+        self.rysuj_pompe(p, self.rura1, 1) 
+        self.rysuj_pompe(p, self.rura_z2_do_z6, 1) 
+        
         for z in self.zbiorniki: z.draw(p)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    okno = SymulacjaKaskady()
-    okno.show()
+    ex = SymulacjaKaskady(); ex.show()
     sys.exit(app.exec_())
