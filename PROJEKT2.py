@@ -19,7 +19,7 @@ class Rura:
         path.moveTo(self.punkty[0])
         for p in self.punkty[1:]:
             path.lineTo(p)
-        # Rura stale żółta - brak wizualizacji przepływu
+        # Rury są zawsze żółte - brak wizualizacji przepływu cieczy
         pen_rura = QPen(self.kolor_rury, self.grubosc, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         painter.setPen(pen_rura)
         painter.drawPath(path)
@@ -29,11 +29,11 @@ class Zbiornik:
         self.x, self.y = x, y
         self.width, self.height = width, height
         self.nazwa = nazwa
-        # Z6 ma większą pojemność ze względu na rozmiar 200x200
+        # Z6 ma większą pojemność (200x200)
         self.pojemnosc = 400.0 if width == 200 else 100.0 
         self.aktualna_ilosc = 0.0
         self.poziom = 0.0
-        self.temperatura = 20.0
+        self.temperatura = 36.6
 
     def dodaj_ciecz(self, ilosc, temp_wlotowa=None):
         wolne = self.pojemnosc - self.aktualna_ilosc
@@ -85,22 +85,19 @@ class Zbiornik:
 class SymulacjaKaskady(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Symulator kaskady - Z6 Control")
+        self.setWindowTitle("Symulator przepływu cieczy")
         self.setFixedSize(1200, 950)
         
         start_temp, ok = QInputDialog.getInt(self, "Parametry", "Temp. Z1 (°C):", 20, 0, 100, 1)
-        self.temp_startowa = float(start_temp) if ok else 20.0
+        self.temp_startowa = float(start_temp) if ok else 36.6
 
         # Zbiorniki
         self.z1 = Zbiornik(100, 50, nazwa="Zbiornik 1")
         self.z1.aktualna_ilosc = 30.0; self.z1.poziom = 0.3; self.z1.temperatura = self.temp_startowa
-        
         self.z2 = Zbiornik(450, 200, nazwa="Zbiornik 2")
         self.z3 = Zbiornik(750, 500, nazwa="Zbiornik 3")
         self.z4 = Zbiornik(100, 650, nazwa="Zbiornik 4")
         self.z5 = Zbiornik(450, 700, nazwa="Zbiornik 5")
-        
-        # Zbiornik 6 (200x200)
         self.z6 = Zbiornik(850, 80, width=200, height=200, nazwa="Zbiornik 6")
         
         self.zbiorniki = [self.z1, self.z2, self.z3, self.z4, self.z5, self.z6]
@@ -110,6 +107,7 @@ class SymulacjaKaskady(QWidget):
         self.rura1 = Rura([p1s, (p1s[0], 125), (p1k[0], 125), p1k])
         
         p2s, p2k = self.z2.punkt_dol_srodek(), self.z3.punkt_gora_srodek()
+        # Rozgałęzienie rury 2 ustawione na Y=480
         self.rura2 = Rura([p2s, (p2s[0], 480), (p2k[0], 480), p2k])
         
         p3s, p3k = self.z2.punkt_lewa_bok_45proc(), self.z4.punkt_gora_srodek()
@@ -134,7 +132,6 @@ class SymulacjaKaskady(QWidget):
         self.btn_start.setGeometry(30, 880, 100, 40)
         self.btn_start.clicked.connect(self.start_stop)
 
-        # Zaktualizowana lista przycisków
         labels = [
             ("Z1 Max", self.pelen_z1), ("Z1 Pusto", self.pusty_z1),
             ("Z2 Max", self.pelen_z2), ("Z2 Pusto", self.pusty_z2),
@@ -152,7 +149,6 @@ class SymulacjaKaskady(QWidget):
             btn.clicked.connect(func)
             x_pos += 85
 
-    # Metody sterowania zbiornikami
     def pelen_z1(self): self.z1.dodaj_ciecz(100.0); self.z1.temperatura = self.temp_startowa; self.update()
     def pusty_z1(self): self.z1.usun_ciecz(100.0); self.update()
     def pelen_z2(self): self.z2.dodaj_ciecz(100.0); self.update()
@@ -172,6 +168,7 @@ class SymulacjaKaskady(QWidget):
         self.running = not self.running
 
     def rysuj_pompe(self, painter, rura, index_punktu):
+        # Pompa to żółte koło z czarnym obrysem
         center = rura.punkty[index_punktu]
         painter.setBrush(Qt.yellow)
         painter.setPen(QPen(Qt.black, 2))
@@ -182,22 +179,21 @@ class SymulacjaKaskady(QWidget):
         if self.z1.poziom > 0.05 and self.z2.aktualna_ilosc < self.z2.pojemnosc:
             self.z2.dodaj_ciecz(self.z1.usun_ciecz(0.6), self.z1.temperatura)
 
-        # Grzanie Z2
         if self.z2.aktualna_ilosc > 0 and self.z2.temperatura < self.temp_startowa + 25:
             self.z2.temperatura += 0.05
 
-        # Pompa Z2 -> Z6 (Wylot na 30% wysokości)
+        # Pompa Z2 -> Z6
         if self.z2.poziom > 0.3 and self.z6.aktualna_ilosc < self.z6.pojemnosc:
             self.z6.dodaj_ciecz(self.z2.usun_ciecz(0.8), self.z2.temperatura)
 
-        # Grawitacyjny odpływ z dna Z2
+        # Odpływ grawitacyjny i Pompa na rozgałęzieniu (Z2 -> Z3, Z2 -> Z5)
         if self.z2.poziom > 0.15:
             if self.z3.aktualna_ilosc < self.z3.pojemnosc:
                 self.z3.dodaj_ciecz(self.z2.usun_ciecz(0.3), self.z2.temperatura)
             if self.z5.aktualna_ilosc < self.z5.pojemnosc:
                 self.z5.dodaj_ciecz(self.z2.usun_ciecz(0.2), self.z2.temperatura)
 
-        # Wylot boczny Z2 -> Z4 (na 45% wysokości)
+        # Z2 -> Z4
         if self.z2.poziom > 0.45 and self.z4.aktualna_ilosc < self.z4.pojemnosc:
             self.z4.dodaj_ciecz(self.z2.usun_ciecz(0.3), self.z2.temperatura)
             
@@ -207,9 +203,10 @@ class SymulacjaKaskady(QWidget):
         p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
         for r in self.rury: r.draw(p)
         
-        # Popy (identyczne dla Z1 i Z2->Z6)
-        self.rysuj_pompe(p, self.rura1, 1) 
-        self.rysuj_pompe(p, self.rura_z2_do_z6, 1) 
+        # Rysowanie pomp w kluczowych punktach
+        self.rysuj_pompe(p, self.rura1, 1)          # Pompa przy Z1
+        self.rysuj_pompe(p, self.rura_z2_do_z6, 1) # Pompa do Z6
+        self.rysuj_pompe(p, self.rura2, 1)          # NOWA POMPA NA ROZGAŁĘZIENIU (punkt Y=480)
         
         for z in self.zbiorniki: z.draw(p)
 
