@@ -126,7 +126,7 @@ class SymulacjaKaskady(QWidget):
         
         self.zbiorniki = [self.z1, self.z2, self.z3, self.z4, self.z5, self.z6]
 
-        #Rury i połączenia.
+        #Rury i połączenia zbiorników.
         p1s, p1k = self.z1.punkt_dol_srodek(), self.z2.punkt_gora_srodek()
         self.rura1 = Rura([p1s, (p1s[0], 125), (p1k[0], 125), p1k])
         p2s, p2k = self.z2.punkt_dol_srodek(), self.z3.punkt_gora_srodek()
